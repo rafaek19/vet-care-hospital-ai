@@ -87,7 +87,7 @@ app.post('/api/chat', async (req, res) => {
         'X-Title': 'Angeles Animal Care Hospital',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'google/gemini-2.0-flash-exp:free',
         messages: [
           { role: 'system', content: 'You are a helpful pet care assistant for Angeles Animal Care Hospital.' },
           { role: 'user', content: question },
