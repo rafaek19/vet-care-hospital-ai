@@ -5,14 +5,11 @@ dotenv.config();
 
 const app = express();
 
-// Manual CORS - bypass any proxy restrictions
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
   next();
 });
 
@@ -29,12 +26,13 @@ app.post('/api/pre-assess', async (req, res) => {
     return res.status(400).json({ error: "Please describe your pet's symptoms." });
 
   if (!process.env.GEMINI_API_KEY)
-    return res.status(500).json({ error: 'Gemini API key not configured on server' });
+    return res.status(500).json({ error: 'Gemini API key not configured' });
 
   const prompt = `You are a veterinary triage assistant for Angeles Animal Care Hospital.
+
 Pet: ${petName || 'Unknown'} (${petType || 'Unknown'}, ${petAge || 'Unknown'})
 Symptoms: ${symptoms}
-Additional Notes: ${additionalNotes || 'None'}
+Notes: ${additionalNotes || 'None'}
 
 Respond ONLY with valid JSON (no markdown):
 {
@@ -62,7 +60,8 @@ Respond ONLY with valid JSON (no markdown):
     );
 
     const data = await response.json();
-    if (!response.ok) return res.status(response.status).json({ error: data?.error?.message || 'Gemini API error' });
+    if (!response.ok)
+      return res.status(response.status).json({ error: data?.error?.message || 'Gemini error' });
 
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!rawText) return res.status(500).json({ error: 'No response from Gemini' });
@@ -71,7 +70,7 @@ Respond ONLY with valid JSON (no markdown):
     const parsed = JSON.parse(cleaned);
     res.json(parsed);
   } catch (err) {
-    console.error('Pre-assess error:', err);
+    console.error('Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -79,31 +78,29 @@ Respond ONLY with valid JSON (no markdown):
 app.post('/api/chat', async (req, res) => {
   const { question } = req.body;
   if (!question) return res.status(400).json({ error: 'Question is required' });
-  if (!process.env.OPENROUTER_API_KEY)
-    return res.status(500).json({ error: 'OpenRouter API key not configured' });
+  if (!process.env.GEMINI_API_KEY)
+    return res.status(500).json({ error: 'Gemini API key not configured' });
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://vet-care-hospital.netlify.app',
-        'X-Title': 'Angeles Animal Care Hospital',
-      },
-      body: JSON.stringify({
-        model: 'openrouter/auto',
-        messages: [
-          { role: 'system', content: 'You are a helpful pet care assistant for Angeles Animal Care Hospital.' },
-          { role: 'user', content: question },
-        ],
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: question }] }],
+          generationConfig: { temperature: 0.4, maxOutputTokens: 512 },
+        }),
+      }
+    );
 
     const data = await response.json();
-    if (!response.ok) return res.status(response.status).json({ error: data?.error?.message || 'API error' });
-    const text = data.choices?.[0]?.message?.content;
-    if (!text) return res.status(500).json({ error: 'No response from AI model' });
+    if (!response.ok)
+      return res.status(response.status).json({ error: data?.error?.message || 'Gemini error' });
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) return res.status(500).json({ error: 'No response from Gemini' });
+
     res.json({ content: [{ text }] });
   } catch (err) {
     res.status(500).json({ error: err.message });
